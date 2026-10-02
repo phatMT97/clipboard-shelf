@@ -1,0 +1,337 @@
+import { Button, VerticalBox, ScrollView } from "std-widgets.slint";
+
+export struct ShelfCardData {
+    id: string,
+    title: string,
+    preview: string,
+    icon: string,
+    time: string,
+    item_type: string,
+    pinned: bool,
+}
+
+export component MainWindow inherits Window {
+    title: "Clipboard Shelf";
+    width: 340px;
+    height: 560px;
+    always-on-top: true;
+    background: #1e1e24;
+
+    in-out property <[ShelfCardData]> items: [];
+    in-out property <int> item_count: 0;
+    in-out property <int> selected_index: 0;
+    in-out property <bool> is_always_on_top: true;
+
+    callback copy_item(string, int);
+    callback pin_item(string, int);
+    callback delete_item(string, int);
+    callback start_drag_item(string, int);
+    callback move_item(int, int);
+    callback clear_all();
+    callback add_shelf_item(ShelfCardData);
+
+    VerticalBox {
+        padding: 10px;
+        spacing: 8px;
+
+        // Header
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "📋 Clipboard Shelf";
+                color: #ffffff;
+                font-size: 15px;
+                font-weight: 700;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                background: #2d2d38;
+                border-radius: 4px;
+                Text {
+                    text: root.item_count;
+                    color: #9a9ab0;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+
+            Rectangle {
+                width: 28px;
+                height: 24px;
+                background: clear-touch.has-hover ? #e81123 : #2d2d38;
+                border-radius: 4px;
+                animate background { duration: 150ms; }
+                clear-touch := TouchArea {
+                    clicked => { root.clear_all(); }
+                }
+                Text {
+                    text: "🗑️";
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        // Shelf item list
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 8px;
+                padding-right: 4px;
+
+                if root.item_count == 0 : Rectangle {
+                    height: 130px;
+                    background: #252530;
+                    border-radius: 8px;
+                    Text {
+                        text: "Sao chép bất kỳ nội dung nào\n(Text, File, Link, Ảnh) để bắt đầu";
+                        color: #727288;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                for item[i] in root.items : Rectangle {
+                    height: 74px;
+                    background: (i == root.selected_index) ?
+                        (card-touch.has-hover ? #2c3954 : #222e44) :
+                        (card-touch.has-hover ? #2c2c3d : #232330);
+                    border-radius: 8px;
+                    border-width: (i == root.selected_index || item.pinned) ? 1.5px : 1px;
+                    border-color: item.pinned ? #60cdff : ((i == root.selected_index) ? #3a86ff : #363646);
+                    animate background, border-color { duration: 120ms; }
+
+                    // Left selection indicator accent pill
+                    if i == root.selected_index : Rectangle {
+                        x: 0px;
+                        y: 12px;
+                        width: 3.5px;
+                        height: 50px;
+                        background: #4cc2ff;
+                        border-top-right-radius: 3px;
+                        border-bottom-right-radius: 3px;
+                    }
+
+                    // Card body touch area (handles selection, re-copy, and deliberate OLE drag)
+                    card-touch := TouchArea {
+                        clicked => {
+                            root.selected_index = i;
+                            root.copy_item(item.id, i);
+                        }
+                        moved => {
+                            // Only trigger OLE drag if mouse moved beyond deliberate 10px threshold
+                            if (self.pressed && (
+                                (self.mouse-x - self.pressed-x) > 10px ||
+                                (self.mouse-x - self.pressed-x) < -10px ||
+                                (self.mouse-y - self.pressed-y) > 10px ||
+                                (self.mouse-y - self.pressed-y) < -10px
+                            )) {
+                                root.start_drag_item(item.id, i);
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        // Reorder drag grip handle
+                        Rectangle {
+                            width: 16px;
+                            height: 56px;
+                            background: grip-touch.has-hover ? #34405a : transparent;
+                            border-radius: 4px;
+                            y: 1px;
+
+                            grip-touch := TouchArea {
+                                mouse-cursor: row-resize;
+                                moved => {
+                                    if (self.pressed) {
+                                        if ((self.mouse-y - self.pressed-y) < -24px && i > 0) {
+                                            root.move_item(i, i - 1);
+                                        }
+                                        if ((self.mouse-y - self.pressed-y) > 24px && i + 1 < root.item_count) {
+                                            root.move_item(i, i + 1);
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: "⠿";
+                                color: grip-touch.has-hover ? #60cdff : (i == root.selected_index ? #8aa2cf : #5e5e74);
+                                font-size: 15px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Type icon box
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            background: (i == root.selected_index) ? #1a2436 : #1a1a22;
+                            border-radius: 6px;
+                            y: 10px;
+
+                            Text {
+                                text: item.icon;
+                                font-size: 16px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Content preview
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 3px;
+
+                            HorizontalLayout {
+                                Text {
+                                    text: item.title;
+                                    color: (i == root.selected_index) ? #ffffff : #e2e2ec;
+                                    font-size: 12px;
+                                    font-weight: (i == root.selected_index) ? 700 : 600;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: item.time;
+                                    color: (i == root.selected_index) ? #82a8ec : #66667a;
+                                    font-size: 10px;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: item.preview;
+                                color: (i == root.selected_index) ? #b0c4de : #9494a8;
+                                font-size: 11px;
+                                overflow: elide;
+                                max-lines: 2;
+                            }
+                        }
+
+                        // Actions column: 2x2 grid (Pin & Delete, Move Up & Move Down)
+                        HorizontalLayout {
+                            spacing: 3px;
+                            width: 44px;
+
+                            VerticalLayout {
+                                spacing: 3px;
+                                width: 20px;
+
+                                // Pin button
+                                Rectangle {
+                                    width: 20px;
+                                    height: 26px;
+                                    background: pin-touch.has-hover ? #3c3c50 : transparent;
+                                    border-radius: 4px;
+                                    pin-touch := TouchArea {
+                                        clicked => { root.pin_item(item.id, i); }
+                                    }
+                                    Text {
+                                        text: item.pinned ? "📌" : "📍";
+                                        font-size: 11px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                // Delete button
+                                Rectangle {
+                                    width: 20px;
+                                    height: 26px;
+                                    background: del-touch.has-hover ? #e81123 : transparent;
+                                    border-radius: 4px;
+                                    del-touch := TouchArea {
+                                        clicked => { root.delete_item(item.id, i); }
+                                    }
+                                    Text {
+                                        text: "✕";
+                                        color: del-touch.has-hover ? #ffffff : #888899;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            VerticalLayout {
+                                spacing: 3px;
+                                width: 20px;
+
+                                // Move Up button
+                                Rectangle {
+                                    width: 20px;
+                                    height: 26px;
+                                    background: up-touch.has-hover ? #344872 : (i == 0 ? #1a1a24 : #242938);
+                                    border-radius: 4px;
+                                    opacity: i > 0 ? 1.0 : 0.25;
+                                    up-touch := TouchArea {
+                                        enabled: i > 0;
+                                        clicked => {
+                                            root.selected_index = i - 1;
+                                            root.move_item(i, i - 1);
+                                        }
+                                    }
+                                    Text {
+                                        text: "▲";
+                                        color: up-touch.has-hover ? #60cdff : #90a0be;
+                                        font-size: 9px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                // Move Down button
+                                Rectangle {
+                                    width: 20px;
+                                    height: 26px;
+                                    background: down-touch.has-hover ? #344872 : (i + 1 == root.item_count ? #1a1a24 : #242938);
+                                    border-radius: 4px;
+                                    opacity: i + 1 < root.item_count ? 1.0 : 0.25;
+                                    down-touch := TouchArea {
+                                        enabled: i + 1 < root.item_count;
+                                        clicked => {
+                                            root.selected_index = i + 1;
+                                            root.move_item(i, i + 1);
+                                        }
+                                    }
+                                    Text {
+                                        text: "▼";
+                                        color: down-touch.has-hover ? #60cdff : #90a0be;
+                                        font-size: 9px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Footer hint
+        HorizontalLayout {
+            Text {
+                text: "💡 Kéo ⠿ hoặc bấm ▲/▼ để đổi vị trí  |  Kéo thẻ để dán";
+                color: #6a6a80;
+                font-size: 11px;
+                horizontal-alignment: center;
+                horizontal-stretch: 1;
+            }
+        }
+    }
+}
