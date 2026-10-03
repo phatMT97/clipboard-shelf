@@ -142,9 +142,9 @@ pub unsafe fn handle_tray_message(hwnd: HWND, lparam: LPARAM) {
                 };
 
                 let lang_txt = if is_en {
-                    windows::core::w!("🌐 Ngôn ngữ: Tiếng Việt (Switch to VI)")
+                    windows::core::w!("🌐 Switch to Vietnamese")
                 } else {
-                    windows::core::w!("🌐 Language: English (Switch to EN)")
+                    windows::core::w!("🌐 Chuyển sang Tiếng Anh")
                 };
 
                 let exit_txt = if is_en {

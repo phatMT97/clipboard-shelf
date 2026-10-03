@@ -87,28 +87,29 @@ fn draw_rounded_rect_grad(
     }
 }
 
-/// Creates an ultra-clean, modern, minimalist Clipboard Shelf icon (256x256).
+/// Creates an ultra-clean, modern, minimalist Clipboard Shelf icon (256x256)
+/// with generous padding so it never gets clipped in Windows title bars or taskbars.
 fn create_minimal_shelf_icon_256() -> RgbaImage {
     let mut img = RgbaImage::new(256, 256);
 
-    // 1. Subtle smooth ambient shadow for depth
-    for i in (1..=8).rev() {
-        let extra = i as f32 * 2.2;
-        let alpha = (14.0 - i as f32 * 1.5).max(0.0) as u8;
+    // 1. Subtle smooth ambient shadow for depth (bounded safely inside 256x256)
+    for i in (1..=6).rev() {
+        let extra = i as f32 * 1.8;
+        let alpha = (12.0 - i as f32 * 1.6).max(0.0) as u8;
         draw_rounded_rect_grad(
             &mut img,
-            38.0 - extra, 36.0 - extra, 218.0 + extra, 240.0 + extra, 28.0 + extra,
+            48.0 - extra, 46.0 - extra, 208.0 + extra, 224.0 + extra, 24.0 + extra,
             [0, 0, 0, 0], [0, 0, 0, 0],
             [0, 0, 0, alpha],
             extra,
         );
     }
 
-    // 2. Clipboard Base Board
-    // Elegant deep indigo-navy gradient with a vibrant cyan border
+    // 2. Clipboard Base Board (Width: 160, Height: 178, centered at x=128, y=135)
+    // Deep indigo-navy gradient with vibrant sky cyan border
     draw_rounded_rect_grad(
         &mut img,
-        38.0, 36.0, 218.0, 240.0, 28.0,
+        48.0, 46.0, 208.0, 224.0, 24.0,
         [30, 41, 59, 255],        // Slate 800
         [15, 23, 42, 255],        // Slate 900
         [56, 189, 248, 255],      // Sky 400
@@ -118,7 +119,7 @@ fn create_minimal_shelf_icon_256() -> RgbaImage {
     // 3. Crisp White Paper Sheet (Centered, high contrast, clean)
     draw_rounded_rect_grad(
         &mut img,
-        56.0, 64.0, 200.0, 222.0, 16.0,
+        64.0, 70.0, 192.0, 208.0, 14.0,
         [255, 255, 255, 255],     // Pure crisp white
         [248, 250, 252, 255],     // Slate 50
         [226, 232, 240, 255],     // Slate 200
@@ -126,10 +127,10 @@ fn create_minimal_shelf_icon_256() -> RgbaImage {
     );
 
     // 4. Content lines (Clean, simple, rounded bars)
-    // Primary / Title bar (Vibrant Sky/Cyan Blue)
+    // Primary / Title bar (Vibrant Sky Blue)
     draw_rounded_rect_grad(
         &mut img,
-        76.0, 96.0, 150.0, 114.0, 7.0,
+        80.0, 98.0, 146.0, 112.0, 6.0,
         [14, 165, 233, 255],      // Sky 500
         [2, 132, 199, 255],       // Sky 600
         [0, 0, 0, 0],
@@ -139,7 +140,7 @@ fn create_minimal_shelf_icon_256() -> RgbaImage {
     // Body line 1 (Slate 400)
     draw_rounded_rect_grad(
         &mut img,
-        76.0, 130.0, 180.0, 144.0, 5.0,
+        80.0, 126.0, 174.0, 138.0, 5.0,
         [148, 163, 184, 255],
         [148, 163, 184, 255],
         [0, 0, 0, 0],
@@ -149,7 +150,7 @@ fn create_minimal_shelf_icon_256() -> RgbaImage {
     // Body line 2 (Slate 300)
     draw_rounded_rect_grad(
         &mut img,
-        76.0, 158.0, 170.0, 172.0, 5.0,
+        80.0, 150.0, 166.0, 162.0, 5.0,
         [203, 213, 225, 255],
         [203, 213, 225, 255],
         [0, 0, 0, 0],
@@ -159,7 +160,7 @@ fn create_minimal_shelf_icon_256() -> RgbaImage {
     // Body line 3 (Slate 200)
     draw_rounded_rect_grad(
         &mut img,
-        76.0, 186.0, 136.0, 200.0, 5.0,
+        80.0, 174.0, 136.0, 186.0, 5.0,
         [226, 232, 240, 255],
         [226, 232, 240, 255],
         [0, 0, 0, 0],
@@ -170,17 +171,17 @@ fn create_minimal_shelf_icon_256() -> RgbaImage {
     // Top Clamp Bar (Clean, rounded pill with sleek metallic gradient)
     draw_rounded_rect_grad(
         &mut img,
-        86.0, 24.0, 170.0, 54.0, 10.0,
+        92.0, 32.0, 164.0, 58.0, 10.0,
         [241, 245, 249, 255],     // Slate 100
         [203, 213, 225, 255],     // Slate 300
         [148, 163, 184, 255],     // Slate 400
         2.0,
     );
 
-    // Clip Accent Grip (Vibrant cyan/sky center pill)
+    // Clip Accent Grip (Vibrant sky cyan center pill)
     draw_rounded_rect_grad(
         &mut img,
-        104.0, 33.0, 152.0, 45.0, 5.0,
+        108.0, 40.0, 148.0, 50.0, 5.0,
         [56, 189, 248, 255],      // Sky 400
         [2, 132, 199, 255],       // Sky 600
         [0, 0, 0, 0],

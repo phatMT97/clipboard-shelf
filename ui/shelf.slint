@@ -70,30 +70,40 @@ export component MainWindow inherits Window {
         padding: 10px;
         spacing: 8px;
 
-        // Header
+        // Header / Action Bar
         HorizontalLayout {
             spacing: 8px;
-            Text {
-                text: "📋 Clipboard Shelf";
-                color: #ffffff;
-                font-size: 15px;
-                font-weight: 700;
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-            }
+            alignment: center;
 
-            // Item count badge
-            Rectangle {
-                width: 24px;
-                height: 24px;
-                background: #2d2d38;
-                border-radius: 4px;
+            // Left: Clean item counter
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                horizontal-stretch: 1;
+
+                Rectangle {
+                    width: 24px;
+                    height: 24px;
+                    background: #2d2d38;
+                    border-radius: 4px;
+                    Text {
+                        text: root.item_count;
+                        color: #60cdff;
+                        font-size: 11px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                }
+
                 Text {
-                    text: root.item_count;
+                    text: root.current_locale == "en" ? 
+                        (root.item_count == 1 ? "1 item" : (root.item_count + " items")) : 
+                        (root.item_count + " mục");
                     color: #9a9ab0;
-                    font-size: 11px;
+                    font-size: 12px;
+                    font-weight: 500;
                     vertical-alignment: center;
-                    horizontal-alignment: center;
                 }
             }
 
