@@ -87,6 +87,7 @@ fn run_listener_loop(tx: Sender<ClipboardItem>, running: Arc<AtomicBool>) {
         crate::tray::add_tray_icon(hwnd);
 
         let mut last_content: Option<String> = None;
+        let mut last_image_capture: Option<(String, std::time::Instant)> = None;
 
         // Startup: capture whatever is currently on the clipboard so shelf starts with user's last copy!
         if let Some(initial_item) = read_clipboard_item() {
@@ -95,6 +96,9 @@ fn run_listener_loop(tx: Sender<ClipboardItem>, running: Arc<AtomicBool>) {
                 last_content = Some(t.clone());
             } else if let Some(f) = initial_item.file_paths.first() {
                 last_content = Some(f.clone());
+                if initial_item.item_type == ItemType::Image {
+                    last_image_capture = Some((f.clone(), std::time::Instant::now()));
+                }
             }
             let _ = tx.send(initial_item);
         }
@@ -116,14 +120,31 @@ fn run_listener_loop(tx: Sender<ClipboardItem>, running: Arc<AtomicBool>) {
                             }
                         }
                     } else if let Some(item) = read_clipboard_item() {
-                        let is_duplicate = match (&last_content, &item.text_content, item.file_paths.first()) {
-                            (Some(last), Some(current), _) => last == current,
-                            (Some(last), None, Some(first_file)) => last == first_file,
-                            _ => false,
+                        let is_duplicate = if item.item_type == ItemType::Image {
+                            let current_file = item.file_paths.first().cloned().unwrap_or_default();
+                            let is_same_file = last_content.as_ref().map(|l| l == &current_file).unwrap_or(false);
+                            let is_recent_same_image = if let Some((last_file, time)) = &last_image_capture {
+                                (last_file == &current_file || last_file.ends_with(&current_file))
+                                    && time.elapsed() < Duration::from_millis(1500)
+                            } else {
+                                false
+                            };
+                            is_same_file || is_recent_same_image
+                        } else {
+                            match (&last_content, &item.text_content, item.file_paths.first()) {
+                                (Some(last), Some(current), _) => last == current,
+                                (Some(last), None, Some(first_file)) => last == first_file,
+                                _ => false,
+                            }
                         };
 
                         if !is_duplicate {
-                            if let Some(t) = &item.text_content {
+                            if item.item_type == ItemType::Image {
+                                if let Some(f) = item.file_paths.first() {
+                                    last_content = Some(f.clone());
+                                    last_image_capture = Some((f.clone(), std::time::Instant::now()));
+                                }
+                            } else if let Some(t) = &item.text_content {
                                 last_content = Some(t.clone());
                             } else if let Some(f) = item.file_paths.first() {
                                 last_content = Some(f.clone());
@@ -281,11 +302,19 @@ fn read_clipboard_item() -> Option<ClipboardItem> {
                         bmp_data.extend_from_slice(&(offset_to_bits as u32).to_le_bytes());
                         bmp_data.extend_from_slice(dib_bytes);
 
-                        let file_name = format!("image_{}_{}.png", Local::now().format("%Y%m%d_%H%M%S"), &uuid::Uuid::new_v4().to_string()[..8]);
-                        let full_path = temp_dir.join(file_name);
+                        let dib_hash = hash_bytes(dib_bytes);
+                        let file_name = format!("image_{:016x}.png", dib_hash);
+                        let full_path = temp_dir.join(&file_name);
 
-                        // Decode BMP bytes in memory and encode directly to PNG for Slint and Windows!
-                        if let Ok(img) = image::load_from_memory_with_format(&bmp_data, image::ImageFormat::Bmp) {
+                        if full_path.exists() {
+                            file_path = Some(full_path.to_string_lossy().to_string());
+                            if dib_bytes.len() >= 12 {
+                                let bi_w = i32::from_le_bytes([dib_bytes[4], dib_bytes[5], dib_bytes[6], dib_bytes[7]]).abs() as u32;
+                                let bi_h = i32::from_le_bytes([dib_bytes[8], dib_bytes[9], dib_bytes[10], dib_bytes[11]]).abs() as u32;
+                                img_title = format!("Ảnh chụp ({}×{})", bi_w, bi_h);
+                                img_preview = format!("Ảnh chụp màn hình ({} × {} px)", bi_w, bi_h);
+                            }
+                        } else if let Ok(img) = image::load_from_memory_with_format(&bmp_data, image::ImageFormat::Bmp) {
                             if img.save_with_format(&full_path, image::ImageFormat::Png).is_ok() {
                                 file_path = Some(full_path.to_string_lossy().to_string());
                                 img_title = format!("Ảnh chụp ({}×{})", img.width(), img.height());
@@ -293,7 +322,7 @@ fn read_clipboard_item() -> Option<ClipboardItem> {
                             }
                         } else {
                             // Fallback if image crate fails to parse BMP: write raw BMP
-                            let bmp_path = temp_dir.join(format!("image_{}.bmp", Local::now().format("%Y%m%d_%H%M%S")));
+                            let bmp_path = temp_dir.join(format!("image_{:016x}.bmp", dib_hash));
                             if std::fs::write(&bmp_path, &bmp_data).is_ok() {
                                 file_path = Some(bmp_path.to_string_lossy().to_string());
                             }
@@ -329,3 +358,16 @@ unsafe fn wcslen(ptr: *const u16) -> usize {
     }
     len
 }
+
+fn hash_bytes(data: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    let step = (data.len() / 4096).max(1);
+    let mut i = 0;
+    while i < data.len() {
+        h ^= data[i] as u64;
+        h = h.wrapping_mul(0x100000001b3);
+        i += step;
+    }
+    h ^ (data.len() as u64)
+}
+

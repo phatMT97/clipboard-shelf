@@ -1025,11 +1025,11 @@ export component MainWindow inherits Window {
             Text {
                 text: root.is_reordering ?
                     (root.current_locale == "en" ?
-                        ("📍 Moving card [" + (root.reorder_from + 1) + "] ➔ Position [" + (root.reorder_to + 1) + "] (Release mouse to place)") :
-                        ("📍 Đang di chuyển thẻ [" + (root.reorder_from + 1) + "] ➔ Vị trí [" + (root.reorder_to + 1) + "] (Thả chuột để đặt)")) :
+                        ("📍 Moving card [" + (root.reorder_from + 1) + "] -> Position [" + (root.reorder_to + 1) + "] (Release mouse to place)") :
+                        ("📍 Đang di chuyển thẻ [" + (root.reorder_from + 1) + "] -> Vị trí [" + (root.reorder_to + 1) + "] (Thả chuột để đặt)")) :
                     (root.current_locale == "en" ?
-                        "💡 Drag ⠿ to reorder  |  Click ▲/▼ to jump  |  Drag cards directly into Notepad/Word" :
-                        "💡 Kéo ⠿ đổi thứ tự  |  Bấm ▲/▼ đổi nấc  |  Kéo thẻ thả trực tiếp vào Notepad/Word");
+                        "💡 Drag cards to reorder  |  Click ▲/▼ to jump  |  Drag directly into Notepad/Word" :
+                        "💡 Kéo thẻ để đổi thứ tự  |  Bấm ▲/▼ để nhảy  |  Kéo thả trực tiếp vào Notepad/Word");
                 color: root.is_reordering ? #4cc2ff : #6a6a80;
                 font-size: 10px;
                 font-weight: root.is_reordering ? 700 : 400;
