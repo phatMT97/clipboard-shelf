@@ -22,4 +22,23 @@ mod tests {
 
         println!("Successfully enumerated {} formats!", fetched);
     }
+
+    #[test]
+    fn test_drop_source_flags() {
+        use windows::Win32::Foundation::{BOOL, DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, S_OK};
+        use windows::Win32::System::Ole::IDropSource;
+        use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
+        use crate::transfer::ShelfDropSource;
+
+        let source: IDropSource = ShelfDropSource.into();
+        unsafe {
+            // When LBUTTON is down (0x0001)
+            let res = source.QueryContinueDrag(BOOL(0), MODIFIERKEYS_FLAGS(1));
+            assert_eq!(res, S_OK);
+
+            // When LBUTTON is released (0)
+            let res = source.QueryContinueDrag(BOOL(0), MODIFIERKEYS_FLAGS(0));
+            assert_eq!(res, DRAGDROP_S_DROP);
+        }
+    }
 }

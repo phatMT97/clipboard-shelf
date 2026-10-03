@@ -22,6 +22,11 @@ export component MainWindow inherits Window {
     in-out property <int> selected_index: 0;
     in-out property <bool> is_always_on_top: true;
 
+    // Continuous reorder state
+    in-out property <int> reorder_from: -1;
+    in-out property <int> reorder_to: -1;
+    in-out property <bool> is_reordering: false;
+
     callback copy_item(string, int);
     callback pin_item(string, int);
     callback delete_item(string, int);
@@ -101,13 +106,27 @@ export component MainWindow inherits Window {
 
                 for item[i] in root.items : Rectangle {
                     height: 74px;
-                    background: (i == root.selected_index) ?
-                        (card-touch.has-hover ? #2c3954 : #222e44) :
-                        (card-touch.has-hover ? #2c2c3d : #232330);
+                    background: (root.is_reordering && root.reorder_from == i) ?
+                        #2b3d62 :
+                        ((i == root.selected_index) ?
+                            (card-touch.has-hover ? #2c3954 : #222e44) :
+                            (card-touch.has-hover ? #2c2c3d : #232330));
                     border-radius: 8px;
-                    border-width: (i == root.selected_index || item.pinned) ? 1.5px : 1px;
-                    border-color: item.pinned ? #60cdff : ((i == root.selected_index) ? #3a86ff : #363646);
+                    border-width: (root.is_reordering && root.reorder_from == i) ? 2px : ((i == root.selected_index || item.pinned) ? 1.5px : 1px);
+                    border-color: (root.is_reordering && root.reorder_from == i) ?
+                        #60cdff :
+                        (item.pinned ? #60cdff : ((i == root.selected_index) ? #3a86ff : #363646));
                     animate background, border-color { duration: 120ms; }
+
+                    // Drop target insertion bar indicator
+                    if root.is_reordering && root.reorder_to == i && root.reorder_from != i : Rectangle {
+                        x: 4px;
+                        y: (root.reorder_to > root.reorder_from) ? 70px : 1px;
+                        width: 310px;
+                        height: 3px;
+                        background: #4cc2ff;
+                        border-radius: 1.5px;
+                    }
 
                     // Left selection indicator accent pill
                     if i == root.selected_index : Rectangle {
@@ -120,19 +139,21 @@ export component MainWindow inherits Window {
                         border-bottom-right-radius: 3px;
                     }
 
-                    // Card body touch area (handles selection, re-copy, and deliberate OLE drag)
+                    // Card body touch area (handles selection, re-copy, and deliberate OLE drag to external apps)
                     card-touch := TouchArea {
                         clicked => {
-                            root.selected_index = i;
-                            root.copy_item(item.id, i);
+                            if (!root.is_reordering) {
+                                root.selected_index = i;
+                                root.copy_item(item.id, i);
+                            }
                         }
                         moved => {
-                            // Only trigger OLE drag if mouse moved beyond deliberate 10px threshold
-                            if (self.pressed && (
-                                (self.mouse-x - self.pressed-x) > 10px ||
-                                (self.mouse-x - self.pressed-x) < -10px ||
-                                (self.mouse-y - self.pressed-y) > 10px ||
-                                (self.mouse-y - self.pressed-y) < -10px
+                            // Only trigger OLE drag if not currently reordering and mouse moved beyond 12px
+                            if (!root.is_reordering && self.pressed && (
+                                (self.mouse-x - self.pressed-x) > 12px ||
+                                (self.mouse-x - self.pressed-x) < -12px ||
+                                (self.mouse-y - self.pressed-y) > 12px ||
+                                (self.mouse-y - self.pressed-y) < -12px
                             )) {
                                 root.start_drag_item(item.id, i);
                             }
@@ -143,32 +164,50 @@ export component MainWindow inherits Window {
                         padding: 8px;
                         spacing: 6px;
 
-                        // Reorder drag grip handle
+                        // Reorder drag grip handle (supports continuous multi-slot drag and drop)
                         Rectangle {
-                            width: 16px;
+                            width: 18px;
                             height: 56px;
-                            background: grip-touch.has-hover ? #34405a : transparent;
+                            background: grip-touch.has-hover ? #34405a : (root.is_reordering && root.reorder_from == i ? #3a4c70 : transparent);
                             border-radius: 4px;
                             y: 1px;
 
                             grip-touch := TouchArea {
                                 mouse-cursor: row-resize;
+                                pointer-event(event) => {
+                                    if (event.kind == PointerEventKind.down) {
+                                        root.reorder_from = i;
+                                        root.reorder_to = i;
+                                        root.is_reordering = true;
+                                        root.selected_index = i;
+                                    }
+                                    if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                                        if (root.is_reordering) {
+                                            if (root.reorder_from >= 0 && root.reorder_to >= 0 && root.reorder_from != root.reorder_to) {
+                                                root.move_item(root.reorder_from, root.reorder_to);
+                                            }
+                                            root.is_reordering = false;
+                                            root.reorder_from = -1;
+                                            root.reorder_to = -1;
+                                        }
+                                    }
+                                }
                                 moved => {
-                                    if (self.pressed) {
-                                        if ((self.mouse-y - self.pressed-y) < -24px && i > 0) {
-                                            root.move_item(i, i - 1);
-                                        }
-                                        if ((self.mouse-y - self.pressed-y) > 24px && i + 1 < root.item_count) {
-                                            root.move_item(i, i + 1);
-                                        }
+                                    if (self.pressed && root.is_reordering) {
+                                        let delta = self.mouse-y - self.pressed-y;
+                                        let offset: int = (delta > 0px) ?
+                                            ((delta + 41px) / 82px) :
+                                            ((delta - 41px) / 82px);
+                                        root.reorder_to = Math.max(0, Math.min(root.item_count - 1, root.reorder_from + offset));
                                     }
                                 }
                             }
 
                             Text {
                                 text: "⠿";
-                                color: grip-touch.has-hover ? #60cdff : (i == root.selected_index ? #8aa2cf : #5e5e74);
-                                font-size: 15px;
+                                color: (root.is_reordering && root.reorder_from == i) ? #4cc2ff : (grip-touch.has-hover ? #60cdff : (i == root.selected_index ? #8aa2cf : #5e5e74));
+                                font-size: 16px;
+                                font-weight: (root.is_reordering && root.reorder_from == i) ? 800 : 400;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
                             }
@@ -213,9 +252,14 @@ export component MainWindow inherits Window {
                             }
 
                             Text {
-                                text: item.preview;
-                                color: (i == root.selected_index) ? #b0c4de : #9494a8;
+                                text: (root.is_reordering && root.reorder_from == i && root.reorder_to != i) ?
+                                    ("📍 Thả để chuyển sang vị trí " + (root.reorder_to + 1)) :
+                                    item.preview;
+                                color: (root.is_reordering && root.reorder_from == i && root.reorder_to != i) ?
+                                    #60cdff :
+                                    ((i == root.selected_index) ? #b0c4de : #9494a8);
                                 font-size: 11px;
+                                font-weight: (root.is_reordering && root.reorder_from == i && root.reorder_to != i) ? 700 : 400;
                                 overflow: elide;
                                 max-lines: 2;
                             }
@@ -326,9 +370,12 @@ export component MainWindow inherits Window {
         // Footer hint
         HorizontalLayout {
             Text {
-                text: "💡 Kéo ⠿ hoặc bấm ▲/▼ để đổi vị trí  |  Kéo thẻ để dán";
-                color: #6a6a80;
+                text: root.is_reordering ?
+                    ("📍 Đang di chuyển thẻ [" + (root.reorder_from + 1) + "] ➔ Vị trí [" + (root.reorder_to + 1) + "] (Thả chuột để đặt)") :
+                    "💡 Kéo ⠿ đến bất kỳ vị trí nào rồi thả  |  Bấm ▲/▼ để đổi từng nấc";
+                color: root.is_reordering ? #4cc2ff : #6a6a80;
                 font-size: 11px;
+                font-weight: root.is_reordering ? 700 : 400;
                 horizontal-alignment: center;
                 horizontal-stretch: 1;
             }

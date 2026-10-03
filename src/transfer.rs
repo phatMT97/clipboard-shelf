@@ -13,7 +13,7 @@ use windows::Win32::System::Memory::{
     GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT,
 };
 use windows::Win32::System::Ole::{
-    DoDragDrop, IDropSource, IDropSource_Impl, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_NONE,
+    DoDragDrop, IDropSource, IDropSource_Impl, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_NONE,
 };
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows::Win32::UI::Shell::DROPFILES;
@@ -34,11 +34,16 @@ impl IDropSource_Impl for ShelfDropSource_Impl {
         grfkeystate: MODIFIERKEYS_FLAGS,
     ) -> HRESULT {
         if fescapepressed.as_bool() {
+            crate::log_msg("QueryContinueDrag -> CANCEL (ESC pressed)");
             return DRAGDROP_S_CANCEL;
         }
 
-        // If left mouse button is released, commit the drop
-        if (grfkeystate.0 & MK_LBUTTON) == 0 {
+        // Left button is down if either reported by grfkeystate or physically held down
+        let lbutton_down = (grfkeystate.0 & MK_LBUTTON) != 0
+            || unsafe { (windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x01) as i16) < 0 };
+
+        if !lbutton_down {
+            crate::log_msg(format!("QueryContinueDrag -> DROP (button released, grfkeystate={:#x})", grfkeystate.0));
             return DRAGDROP_S_DROP;
         }
 
@@ -360,11 +365,11 @@ pub fn initiate_drag_drop(text: Option<String>, files: Vec<String>) -> u32 {
         let hr = DoDragDrop(
             &data_object,
             &drop_source,
-            DROPEFFECT_COPY,
+            DROPEFFECT_COPY | DROPEFFECT_MOVE,
             &mut effect,
         );
 
-        println!("--> DoDragDrop completed: hr = {:?}, effect = {:?}", hr, effect);
+        crate::log_msg(format!("--> DoDragDrop completed: hr = {:?}, effect = {:?}", hr, effect));
         effect.0
     }
 }
