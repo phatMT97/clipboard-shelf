@@ -866,10 +866,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     false
                 };
 
-                let lbutton_down = unsafe {
-                    (windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x01) as i16) < 0
-                };
-
                 let inside_win = cursor_pt.x >= cur_x
                     && cursor_pt.x <= cur_x + win_w
                     && cursor_pt.y >= win_y
@@ -879,7 +875,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     && cursor_pt.y >= win_y
                     && cursor_pt.y <= win_y + win_h;
 
-                if inside_win || hovering_tab || is_dragging || lbutton_down {
+                if inside_win || hovering_tab || is_dragging {
                     LAST_INSIDE_MS.store(now_ms, Ordering::SeqCst);
                     TARGET_WINDOW_X.store(exp_x, Ordering::SeqCst);
                     IS_COLLAPSED.store(false, Ordering::SeqCst);
