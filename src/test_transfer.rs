@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     fn test_drop_source_flags() {
-        use windows::Win32::Foundation::{BOOL, DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, S_OK};
+        use windows::Win32::Foundation::{BOOL, DRAGDROP_S_DROP, S_OK};
         use windows::Win32::System::Ole::IDropSource;
         use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
         use crate::transfer::ShelfDropSource;

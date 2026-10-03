@@ -12,8 +12,8 @@ export struct ShelfCardData {
 
 export component MainWindow inherits Window {
     title: "Clipboard Shelf";
-    width: 340px;
-    height: 560px;
+    width: 360px;
+    height: 580px;
     always-on-top: true;
     background: #1e1e24;
 
@@ -27,6 +27,9 @@ export component MainWindow inherits Window {
     in-out property <int> reorder_to: -1;
     in-out property <bool> is_reordering: false;
 
+    in-out property <string> active_filter: "all";
+    in-out property <string> search_text: "";
+
     callback copy_item(string, int);
     callback pin_item(string, int);
     callback delete_item(string, int);
@@ -34,6 +37,8 @@ export component MainWindow inherits Window {
     callback move_item(int, int);
     callback clear_all();
     callback add_shelf_item(ShelfCardData);
+    callback filter_changed(string, string);
+    callback refresh_shelf();
 
     VerticalBox {
         padding: 10px;
@@ -68,7 +73,7 @@ export component MainWindow inherits Window {
             Rectangle {
                 width: 28px;
                 height: 24px;
-                background: clear-touch.has-hover ? #e81123 : #2d2d38;
+                background: clear-touch.has-hover ? #d83b01 : #2d2d38;
                 border-radius: 4px;
                 animate background { duration: 150ms; }
                 clear-touch := TouchArea {
@@ -83,10 +88,183 @@ export component MainWindow inherits Window {
             }
         }
 
+        // Live Search Input Bar
+        Rectangle {
+            height: 28px;
+            background: #242430;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: search-input.has-focus ? #4cc2ff : #363648;
+            animate border-color { duration: 120ms; }
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 6px;
+
+                Text {
+                    text: "🔍";
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+
+                if root.search_text == "" && !search-input.has-focus : Text {
+                    text: "Tìm kiếm nội dung...";
+                    color: #646478;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                search-input := TextInput {
+                    text <=> root.search_text;
+                    font-size: 11px;
+                    color: #ffffff;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    edited => {
+                        root.filter_changed(root.active_filter, self.text);
+                    }
+                }
+
+                if root.search_text != "" : Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: clear-search.has-hover ? #3e3e50 : transparent;
+                    y: 5px;
+                    clear-search := TouchArea {
+                        clicked => {
+                            root.search_text = "";
+                            root.filter_changed(root.active_filter, "");
+                        }
+                    }
+                    Text {
+                        text: "×";
+                        font-size: 13px;
+                        font-weight: 700;
+                        color: #a0a0b8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Category Filter Chips Bar
+        HorizontalLayout {
+            spacing: 5px;
+            height: 24px;
+
+            // All Chip
+            Rectangle {
+                border-radius: 12px;
+                background: (root.active_filter == "all") ? #0078d4 : (chip-all.has-hover ? #2e2e3c : #242430);
+                border-width: 1px;
+                border-color: (root.active_filter == "all") ? #4cc2ff : #363646;
+                animate background, border-color { duration: 120ms; }
+                chip-all := TouchArea {
+                    clicked => {
+                        root.active_filter = "all";
+                        root.filter_changed("all", root.search_text);
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 9px;
+                    padding-right: 9px;
+                    Text {
+                        text: "Tất cả";
+                        font-size: 10.5px;
+                        font-weight: (root.active_filter == "all") ? 700 : 500;
+                        color: (root.active_filter == "all") ? #ffffff : #a0a0b4;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Text Chip
+            Rectangle {
+                border-radius: 12px;
+                background: (root.active_filter == "text") ? #183358 : (chip-text.has-hover ? #2e2e3c : #242430);
+                border-width: 1px;
+                border-color: (root.active_filter == "text") ? #60cdff : #363646;
+                animate background, border-color { duration: 120ms; }
+                chip-text := TouchArea {
+                    clicked => {
+                        root.active_filter = "text";
+                        root.filter_changed("text", root.search_text);
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    Text {
+                        text: "📝 Chữ";
+                        font-size: 10.5px;
+                        font-weight: (root.active_filter == "text") ? 700 : 500;
+                        color: (root.active_filter == "text") ? #60cdff : #a0a0b4;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Links Chip
+            Rectangle {
+                border-radius: 12px;
+                background: (root.active_filter == "url") ? #321c54 : (chip-url.has-hover ? #2e2e3c : #242430);
+                border-width: 1px;
+                border-color: (root.active_filter == "url") ? #b892ff : #363646;
+                animate background, border-color { duration: 120ms; }
+                chip-url := TouchArea {
+                    clicked => {
+                        root.active_filter = "url";
+                        root.filter_changed("url", root.search_text);
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    Text {
+                        text: "🔗 Link";
+                        font-size: 10.5px;
+                        font-weight: (root.active_filter == "url") ? 700 : 500;
+                        color: (root.active_filter == "url") ? #b892ff : #a0a0b4;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Files Chip
+            Rectangle {
+                border-radius: 12px;
+                background: (root.active_filter == "files") ? #3c2910 : (chip-files.has-hover ? #2e2e3c : #242430);
+                border-width: 1px;
+                border-color: (root.active_filter == "files") ? #fbbf24 : #363646;
+                animate background, border-color { duration: 120ms; }
+                chip-files := TouchArea {
+                    clicked => {
+                        root.active_filter = "files";
+                        root.filter_changed("files", root.search_text);
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    Text {
+                        text: "📁 Tệp";
+                        font-size: 10.5px;
+                        font-weight: (root.active_filter == "files") ? 700 : 500;
+                        color: (root.active_filter == "files") ? #fbbf24 : #a0a0b4;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
         // Shelf item list
         ScrollView {
             vertical-stretch: 1;
-            viewport-height: (root.item_count == 0) ? 140px : (root.item_count * 82px + 10px);
+            content-height: (root.item_count == 0) ? 140px : (root.item_count * 82px + 10px);
 
             VerticalLayout {
                 height: (root.item_count == 0) ? 140px : (root.item_count * 82px + 10px);
@@ -106,18 +284,18 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                for item[i] in root.items : Rectangle {
+                for item[i] in root.items : card := Rectangle {
                     height: 74px;
                     background: (root.is_reordering && root.reorder_from == i) ?
-                        #2b3d62 :
+                        #283c5e :
                         ((i == root.selected_index) ?
-                            (card-touch.has-hover ? #2c3954 : #222e44) :
-                            (card-touch.has-hover ? #2c2c3d : #232330));
+                            (card-touch.has-hover ? #243550 : #1c2b42) :
+                            (card-touch.has-hover ? #2b2b3a : #22222d));
                     border-radius: 8px;
                     border-width: (root.is_reordering && root.reorder_from == i) ? 2px : ((i == root.selected_index || item.pinned) ? 1.5px : 1px);
                     border-color: (root.is_reordering && root.reorder_from == i) ?
                         #60cdff :
-                        (item.pinned ? #60cdff : ((i == root.selected_index) ? #3a86ff : #363646));
+                        (item.pinned ? #3d5478 : ((i == root.selected_index) ? #4cc2ff : (card-touch.has-hover ? #444458 : #323242)));
                     animate background, border-color { duration: 120ms; }
 
                     // Drop target insertion bar indicator
@@ -165,15 +343,14 @@ export component MainWindow inherits Window {
 
                     HorizontalLayout {
                         padding: 8px;
-                        spacing: 6px;
+                        spacing: 7px;
 
                         // Reorder drag grip handle (supports continuous multi-slot drag and drop)
                         Rectangle {
-                            width: 18px;
-                            height: 56px;
-                            background: grip-touch.has-hover ? #34405a : (root.is_reordering && root.reorder_from == i ? #3a4c70 : transparent);
+                            width: 16px;
+                            height: 58px;
+                            background: grip-touch.has-hover ? #303d58 : (root.is_reordering && root.reorder_from == i ? #36486e : transparent);
                             border-radius: 4px;
-                            y: 1px;
 
                             grip-touch := TouchArea {
                                 mouse-cursor: row-resize;
@@ -209,21 +386,29 @@ export component MainWindow inherits Window {
 
                             Text {
                                 text: "⠿";
-                                color: (root.is_reordering && root.reorder_from == i) ? #4cc2ff : (grip-touch.has-hover ? #60cdff : (i == root.selected_index ? #8aa2cf : #5e5e74));
-                                font-size: 16px;
+                                color: (root.is_reordering && root.reorder_from == i) ? #4cc2ff : (grip-touch.has-hover ? #60cdff : (i == root.selected_index ? #8aa2cf : #505066));
+                                font-size: 15px;
                                 font-weight: (root.is_reordering && root.reorder_from == i) ? 800 : 400;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
                             }
                         }
 
-                        // Type icon box
+                        // Type icon box with contextual category background
                         Rectangle {
                             width: 36px;
                             height: 36px;
-                            background: (i == root.selected_index) ? #1a2436 : #1a1a22;
-                            border-radius: 6px;
-                            y: 10px;
+                            background: (item.item_type == "text") ? #182336 :
+                                        ((item.item_type == "url") ? #251b38 :
+                                        ((item.item_type == "files") ? #2e2213 :
+                                        ((item.item_type == "image") ? #13261c : #20202c)));
+                            border-radius: 7px;
+                            border-width: 1px;
+                            border-color: (item.item_type == "text") ? #263854 :
+                                          ((item.item_type == "url") ? #3b2b58 :
+                                          ((item.item_type == "files") ? #4a371e :
+                                          ((item.item_type == "image") ? #1f4230 : #343446)));
+                            y: 11px;
 
                             Text {
                                 text: item.icon;
@@ -233,26 +418,17 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // Content preview
+                        // Main content: Title & Preview
                         VerticalLayout {
                             horizontal-stretch: 1;
                             spacing: 3px;
 
-                            HorizontalLayout {
-                                Text {
-                                    text: item.title;
-                                    color: (i == root.selected_index) ? #ffffff : #e2e2ec;
-                                    font-size: 12px;
-                                    font-weight: (i == root.selected_index) ? 700 : 600;
-                                    overflow: elide;
-                                    horizontal-stretch: 1;
-                                }
-                                Text {
-                                    text: item.time;
-                                    color: (i == root.selected_index) ? #82a8ec : #66667a;
-                                    font-size: 10px;
-                                    vertical-alignment: center;
-                                }
+                            Text {
+                                text: item.title;
+                                color: (i == root.selected_index) ? #ffffff : #eeeeff;
+                                font-size: 12px;
+                                font-weight: (i == root.selected_index) ? 700 : 600;
+                                overflow: elide;
                             }
 
                             Text {
@@ -261,7 +437,7 @@ export component MainWindow inherits Window {
                                     item.preview;
                                 color: (root.is_reordering && root.reorder_from == i && root.reorder_to != i) ?
                                     #60cdff :
-                                    ((i == root.selected_index) ? #b0c4de : #9494a8);
+                                    ((i == root.selected_index) ? #b0c4de : #8e8ea2);
                                 font-size: 11px;
                                 font-weight: (root.is_reordering && root.reorder_from == i && root.reorder_to != i) ? 700 : 400;
                                 overflow: elide;
@@ -269,99 +445,170 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // Actions column: 2x2 grid (Pin & Delete, Move Up & Move Down)
-                        HorizontalLayout {
-                            spacing: 3px;
-                            width: 44px;
+                        // Right column: Metadata (idle) vs Actions Toolbar (hover / selected)
+                        Rectangle {
+                            width: 56px;
+                            height: 58px;
 
-                            VerticalLayout {
-                                spacing: 3px;
-                                width: 20px;
+                            // 1. Idle Metadata View
+                            if !(card-touch.has-hover || i == root.selected_index) : VerticalLayout {
+                                alignment: space-between;
 
-                                // Pin button
-                                Rectangle {
-                                    width: 20px;
-                                    height: 26px;
-                                    background: pin-touch.has-hover ? #3c3c50 : transparent;
-                                    border-radius: 4px;
-                                    pin-touch := TouchArea {
-                                        clicked => { root.pin_item(item.id, i); }
-                                    }
-                                    Text {
-                                        text: item.pinned ? "📌" : "📍";
-                                        font-size: 11px;
-                                        horizontal-alignment: center;
+                                HorizontalLayout {
+                                    alignment: end;
+                                    spacing: 3px;
+
+                                    if item.pinned : Text {
+                                        text: "📌";
+                                        font-size: 10px;
                                         vertical-alignment: center;
+                                    }
+
+                                    // Type badge pill
+                                    Rectangle {
+                                        width: 32px;
+                                        height: 16px;
+                                        border-radius: 3px;
+                                        background: (item.item_type == "text") ? #182638 :
+                                                    ((item.item_type == "url") ? #251c38 :
+                                                    ((item.item_type == "files") ? #2d2212 :
+                                                    ((item.item_type == "image") ? #11281e : #252532)));
+                                        border-width: 1px;
+                                        border-color: (item.item_type == "text") ? #293d5c :
+                                                      ((item.item_type == "url") ? #3c2a60 :
+                                                      ((item.item_type == "files") ? #4a361c :
+                                                      ((item.item_type == "image") ? #1e4231 : #383848)));
+
+                                        Text {
+                                            text: (item.item_type == "text") ? "TEXT" :
+                                                  ((item.item_type == "url") ? "LINK" :
+                                                  ((item.item_type == "files") ? "FILE" :
+                                                  ((item.item_type == "image") ? "IMG" : "CLIP")));
+                                            color: (item.item_type == "text") ? #60cdff :
+                                                   ((item.item_type == "url") ? #b892ff :
+                                                   ((item.item_type == "files") ? #fbbf24 :
+                                                   ((item.item_type == "image") ? #34d399 : #9a9ab0)));
+                                            font-size: 8.5px;
+                                            font-weight: 700;
+                                            vertical-alignment: center;
+                                            horizontal-alignment: center;
+                                        }
                                     }
                                 }
 
-                                // Delete button
-                                Rectangle {
-                                    width: 20px;
-                                    height: 26px;
-                                    background: del-touch.has-hover ? #e81123 : transparent;
-                                    border-radius: 4px;
-                                    del-touch := TouchArea {
-                                        clicked => { root.delete_item(item.id, i); }
-                                    }
-                                    Text {
-                                        text: "✕";
-                                        color: del-touch.has-hover ? #ffffff : #888899;
-                                        font-size: 11px;
-                                        font-weight: 700;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
+                                Text {
+                                    text: item.time;
+                                    color: #727288;
+                                    font-size: 10px;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
                                 }
                             }
 
-                            VerticalLayout {
-                                spacing: 3px;
-                                width: 20px;
+                            // 2. Interactive Action Buttons (hover / selected)
+                            if (card-touch.has-hover || i == root.selected_index) : VerticalLayout {
+                                alignment: space-between;
 
-                                // Move Up button
-                                Rectangle {
-                                    width: 20px;
-                                    height: 26px;
-                                    background: up-touch.has-hover ? #344872 : (i == 0 ? #1a1a24 : #242938);
-                                    border-radius: 4px;
-                                    opacity: i > 0 ? 1.0 : 0.25;
-                                    up-touch := TouchArea {
-                                        enabled: i > 0;
-                                        clicked => {
-                                            root.selected_index = i - 1;
-                                            root.move_item(i, i - 1);
+                                // Row 1: Pin & Delete
+                                HorizontalLayout {
+                                    alignment: end;
+                                    spacing: 4px;
+
+                                    // Pin toggle
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 22px;
+                                        background: pin-touch.has-hover ? #3c3c52 : (item.pinned ? #243550 : #282834);
+                                        border-radius: 4px;
+                                        border-width: 1px;
+                                        border-color: item.pinned ? #4cc2ff : (pin-touch.has-hover ? #505068 : #38384a);
+                                        pin-touch := TouchArea {
+                                            clicked => { root.pin_item(item.id, i); }
+                                        }
+                                        Text {
+                                            text: "📌";
+                                            font-size: 10px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            opacity: item.pinned ? 1.0 : 0.6;
                                         }
                                     }
-                                    Text {
-                                        text: "▲";
-                                        color: up-touch.has-hover ? #60cdff : #90a0be;
-                                        font-size: 9px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
+
+                                    // Delete
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 22px;
+                                        background: del-touch.has-hover ? #e81123 : #282834;
+                                        border-radius: 4px;
+                                        border-width: 1px;
+                                        border-color: del-touch.has-hover ? #ff4d4d : #38384a;
+                                        del-touch := TouchArea {
+                                            clicked => { root.delete_item(item.id, i); }
+                                        }
+                                        Text {
+                                            text: "×";
+                                            color: del-touch.has-hover ? #ffffff : #9898aa;
+                                            font-size: 14px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
                                     }
                                 }
 
-                                // Move Down button
-                                Rectangle {
-                                    width: 20px;
-                                    height: 26px;
-                                    background: down-touch.has-hover ? #344872 : (i + 1 == root.item_count ? #1a1a24 : #242938);
-                                    border-radius: 4px;
-                                    opacity: i + 1 < root.item_count ? 1.0 : 0.25;
-                                    down-touch := TouchArea {
-                                        enabled: i + 1 < root.item_count;
-                                        clicked => {
-                                            root.selected_index = i + 1;
-                                            root.move_item(i, i + 1);
+                                // Row 2: Move Up & Move Down
+                                HorizontalLayout {
+                                    alignment: end;
+                                    spacing: 4px;
+
+                                    // Up button
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 20px;
+                                        background: up-touch.has-hover ? #344872 : #242430;
+                                        border-radius: 4px;
+                                        border-width: 1px;
+                                        border-color: up-touch.has-hover ? #4cc2ff : #343444;
+                                        opacity: i > 0 ? 1.0 : 0.25;
+                                        up-touch := TouchArea {
+                                            enabled: i > 0;
+                                            clicked => {
+                                                root.selected_index = i - 1;
+                                                root.move_item(i, i - 1);
+                                            }
+                                        }
+                                        Text {
+                                            text: "▲";
+                                            color: up-touch.has-hover ? #60cdff : #90a0be;
+                                            font-size: 8.5px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
                                         }
                                     }
-                                    Text {
-                                        text: "▼";
-                                        color: down-touch.has-hover ? #60cdff : #90a0be;
-                                        font-size: 9px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
+
+                                    // Down button
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 20px;
+                                        background: down-touch.has-hover ? #344872 : #242430;
+                                        border-radius: 4px;
+                                        border-width: 1px;
+                                        border-color: down-touch.has-hover ? #4cc2ff : #343444;
+                                        opacity: i + 1 < root.item_count ? 1.0 : 0.25;
+                                        down-touch := TouchArea {
+                                            enabled: i + 1 < root.item_count;
+                                            clicked => {
+                                                root.selected_index = i + 1;
+                                                root.move_item(i, i + 1);
+                                            }
+                                        }
+                                        Text {
+                                            text: "▼";
+                                            color: down-touch.has-hover ? #60cdff : #90a0be;
+                                            font-size: 8.5px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
                                     }
                                 }
                             }

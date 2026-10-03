@@ -31,6 +31,8 @@ mod tests {
             pinned: false,
         });
 
+
+
         let received_ids = Rc::new(RefCell::new(Vec::new()));
         let received_ids_clone = received_ids.clone();
 
@@ -62,5 +64,14 @@ mod tests {
         assert_eq!(cards_model.row_data(0).unwrap().id, "ID_SECOND");
         assert_eq!(cards_model.row_data(1).unwrap().id, "ID_FIRST");
         assert_eq!(ui.get_selected_index(), 0);
+
+        // Test filter_changed callback
+        let filter_received = Rc::new(RefCell::new(Vec::new()));
+        let filter_received_clone = filter_received.clone();
+        ui.on_filter_changed(move |filter, search| {
+            filter_received_clone.borrow_mut().push((filter.to_string(), search.to_string()));
+        });
+        ui.invoke_filter_changed("text".into(), "hello".into());
+        assert_eq!(filter_received.borrow()[0], ("text".to_string(), "hello".to_string()));
     }
 }

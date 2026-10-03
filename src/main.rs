@@ -27,12 +27,86 @@ pub fn log_msg(msg: impl AsRef<str>) {
     }
 }
 
+fn refresh_ui_model(
+    cards_model: &Rc<VecModel<ShelfCardData>>,
+    items_store: &HashMap<String, ClipboardItem>,
+    items_order: &[String],
+    filter: &str,
+    search: &str,
+    ui_weak: &slint::Weak<MainWindow>,
+) {
+    let search_lower = search.trim().to_lowercase();
+    let mut visible = Vec::new();
+
+    for id in items_order {
+        if let Some(item) = items_store.get(id) {
+            // Category filter
+            let matches_category = match filter {
+                "text" => item.item_type == ItemType::Text,
+                "url" => item.item_type == ItemType::Url,
+                "files" => item.item_type == ItemType::Files,
+                "image" => item.item_type == ItemType::Image,
+                _ => true,
+            };
+            if !matches_category {
+                continue;
+            }
+
+            // Search filter
+            if !search_lower.is_empty() {
+                let title_matches = item.title.to_lowercase().contains(&search_lower);
+                let preview_matches = item.preview.to_lowercase().contains(&search_lower);
+                let text_matches = item
+                    .text_content
+                    .as_ref()
+                    .map(|t| t.to_lowercase().contains(&search_lower))
+                    .unwrap_or(false);
+                let file_matches = item
+                    .file_paths
+                    .iter()
+                    .any(|f| f.to_lowercase().contains(&search_lower));
+
+                if !title_matches && !preview_matches && !text_matches && !file_matches {
+                    continue;
+                }
+            }
+
+            visible.push(ShelfCardData {
+                id: item.id.clone().into(),
+                title: item.title.clone().into(),
+                preview: item.preview.clone().into(),
+                icon: item.item_type.icon().into(),
+                time: item.captured_at.format("%H:%M").to_string().into(),
+                item_type: match item.item_type {
+                    ItemType::Text => "text".into(),
+                    ItemType::Url => "url".into(),
+                    ItemType::Files => "files".into(),
+                    ItemType::Image => "image".into(),
+                    ItemType::Custom => "custom".into(),
+                },
+                pinned: item.pinned,
+            });
+        }
+    }
+
+    cards_model.set_vec(visible);
+    if let Some(ui) = ui_weak.upgrade() {
+        ui.set_item_count(cards_model.row_count() as i32);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ui = MainWindow::new()?;
 
     // Shared thread-safe store for full clipboard items
     let items_store: Arc<Mutex<HashMap<String, ClipboardItem>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let items_order: Arc<Mutex<Vec<String>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let current_filter: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("all".to_string()));
+    let current_search: Arc<Mutex<String>> =
+        Arc::new(Mutex::new(String::new()));
 
     // Slint UI list model
     let cards_model: Rc<VecModel<ShelfCardData>> = Rc::new(VecModel::default());
@@ -51,6 +125,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Setup callback for live search and category filter changes
+    let cards_model_for_filter = cards_model.clone();
+    let items_store_for_filter = items_store.clone();
+    let items_order_for_filter = items_order.clone();
+    let current_filter_for_filter = current_filter.clone();
+    let current_search_for_filter = current_search.clone();
+    let ui_weak_for_filter = ui.as_weak();
+    ui.on_filter_changed(move |filter, search| {
+        log_msg(format!("Filter changed: filter={}, search={}", filter, search));
+        *current_filter_for_filter.lock().unwrap() = filter.to_string();
+        *current_search_for_filter.lock().unwrap() = search.to_string();
+        let store = items_store_for_filter.lock().unwrap();
+        let order = items_order_for_filter.lock().unwrap();
+        refresh_ui_model(
+            &cards_model_for_filter,
+            &store,
+            &order,
+            filter.as_str(),
+            search.as_str(),
+            &ui_weak_for_filter,
+        );
+    });
+
+    // Setup callback to refresh shelf model on UI thread
+    let cards_model_for_refresh = cards_model.clone();
+    let items_store_for_refresh = items_store.clone();
+    let items_order_for_refresh = items_order.clone();
+    let current_filter_for_refresh = current_filter.clone();
+    let current_search_for_refresh = current_search.clone();
+    let ui_weak_for_refresh = ui.as_weak();
+    ui.on_refresh_shelf(move || {
+        let store = items_store_for_refresh.lock().unwrap();
+        let order = items_order_for_refresh.lock().unwrap();
+        let filter = current_filter_for_refresh.lock().unwrap();
+        let search = current_search_for_refresh.lock().unwrap();
+        refresh_ui_model(
+            &cards_model_for_refresh,
+            &store,
+            &order,
+            &filter,
+            &search,
+            &ui_weak_for_refresh,
+        );
+    });
+
     // Start Win32 background clipboard listener
     let (tx, rx) = unbounded::<ClipboardItem>();
     let _listener = ClipboardListener::start(tx);
@@ -58,35 +177,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Receive captured items and forward to Slint event loop
     let ui_weak = ui.as_weak();
     let items_store_for_bg = items_store.clone();
+    let items_order_for_bg = items_order.clone();
     std::thread::spawn(move || {
         println!("--> [Worker Thread] Waiting for clipboard items...");
         while let Ok(item) = rx.recv() {
             println!("--> [Worker Thread] rx.recv() got: {}", item.title);
-            let card = ShelfCardData {
-                id: item.id.clone().into(),
-                title: item.title.clone().into(),
-                preview: item.preview.clone().into(),
-                icon: item.item_type.icon().into(),
-                time: item.captured_at.format("%H:%M").to_string().into(),
-                item_type: match item.item_type {
-                    ItemType::Text => "text".into(),
-                    ItemType::Url => "url".into(),
-                    ItemType::Files => "files".into(),
-                    ItemType::Image => "image".into(),
-                    ItemType::Custom => "custom".into(),
-                },
-                pinned: item.pinned,
-            };
-
-            items_store_for_bg.lock().unwrap().insert(item.id.clone(), item);
+            items_store_for_bg.lock().unwrap().insert(item.id.clone(), item.clone());
+            items_order_for_bg.lock().unwrap().insert(0, item.id.clone());
 
             let ui_weak = ui_weak.clone();
             let res = slint::invoke_from_event_loop(move || {
-                println!("--> [Event Loop] invoke_from_event_loop running for: {}", card.title);
                 if let Some(ui) = ui_weak.upgrade() {
-                    ui.invoke_add_shelf_item(card);
-                } else {
-                    eprintln!("--> [Event Loop] Failed to upgrade ui_weak!");
+                    ui.invoke_refresh_shelf();
+                    ui.set_selected_index(0);
                 }
             });
             if let Err(e) = res {
@@ -160,6 +263,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Delete item callback
     let cards_model_for_del = cards_model.clone();
     let items_store_for_del = items_store.clone();
+    let items_order_for_del = items_order.clone();
+    let current_filter_for_del = current_filter.clone();
+    let current_search_for_del = current_search.clone();
     let ui_weak_for_del = ui.as_weak();
     ui.on_delete_item(move |id, idx| {
         let target_id = cards_model_for_del
@@ -168,46 +274,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_else(|| id.to_string());
 
         items_store_for_del.lock().unwrap().remove(&target_id);
-        cards_model_for_del.remove(idx as usize);
+        items_order_for_del.lock().unwrap().retain(|x| x != &target_id);
 
-        if let Some(ui) = ui_weak_for_del.upgrade() {
-            ui.set_item_count(cards_model_for_del.row_count() as i32);
-        }
+        let store = items_store_for_del.lock().unwrap();
+        let order = items_order_for_del.lock().unwrap();
+        let filter = current_filter_for_del.lock().unwrap();
+        let search = current_search_for_del.lock().unwrap();
+        refresh_ui_model(
+            &cards_model_for_del,
+            &store,
+            &order,
+            &filter,
+            &search,
+            &ui_weak_for_del,
+        );
     });
 
     // 4. Clear all unpinned items
     let cards_model_for_clear = cards_model.clone();
     let items_store_for_clear = items_store.clone();
+    let items_order_for_clear = items_order.clone();
+    let current_filter_for_clear = current_filter.clone();
+    let current_search_for_clear = current_search.clone();
     let ui_weak_for_clear = ui.as_weak();
     ui.on_clear_all(move || {
         let mut store = items_store_for_clear.lock().unwrap();
-        let mut pinned_ids = Vec::new();
-        for (id, item) in store.iter() {
-            if item.pinned {
-                pinned_ids.push(id.clone());
-            }
-        }
+        let mut order = items_order_for_clear.lock().unwrap();
 
-        store.retain(|id, _| pinned_ids.contains(id));
+        store.retain(|_, item| item.pinned);
+        order.retain(|id| store.contains_key(id));
 
-        let mut idx = 0;
-        while idx < cards_model_for_clear.row_count() {
-            if let Some(card) = cards_model_for_clear.row_data(idx) {
-                if !card.pinned {
-                    cards_model_for_clear.remove(idx);
-                    continue;
-                }
-            }
-            idx += 1;
-        }
-
-        if let Some(ui) = ui_weak_for_clear.upgrade() {
-            ui.set_item_count(cards_model_for_clear.row_count() as i32);
-        }
+        let filter = current_filter_for_clear.lock().unwrap();
+        let search = current_search_for_clear.lock().unwrap();
+        refresh_ui_model(
+            &cards_model_for_clear,
+            &store,
+            &order,
+            &filter,
+            &search,
+            &ui_weak_for_clear,
+        );
     });
 
     // 5. Move item callback (reorder items)
     let cards_model_for_move = cards_model.clone();
+    let items_store_for_move = items_store.clone();
+    let items_order_for_move = items_order.clone();
+    let current_filter_for_move = current_filter.clone();
+    let current_search_for_move = current_search.clone();
     let ui_weak_for_move = ui.as_weak();
     ui.on_move_item(move |from_idx, to_idx| {
         let count = cards_model_for_move.row_count();
@@ -219,15 +333,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             return;
         }
-        let from = from_idx as usize;
-        let to = to_idx as usize;
-        if let Some(card) = cards_model_for_move.row_data(from) {
-            cards_model_for_move.remove(from);
-            cards_model_for_move.insert(to, card);
+
+        let from_id = cards_model_for_move.row_data(from_idx as usize).map(|c| c.id.to_string());
+        let to_id = cards_model_for_move.row_data(to_idx as usize).map(|c| c.id.to_string());
+
+        if let (Some(f_id), Some(t_id)) = (from_id, to_id) {
+            let mut order = items_order_for_move.lock().unwrap();
+            let f_pos = order.iter().position(|x| x == &f_id);
+            let t_pos = order.iter().position(|x| x == &t_id);
+            if let (Some(fp), Some(tp)) = (f_pos, t_pos) {
+                let val = order.remove(fp);
+                order.insert(tp, val);
+            }
+            drop(order);
+
+            let store = items_store_for_move.lock().unwrap();
+            let order = items_order_for_move.lock().unwrap();
+            let filter = current_filter_for_move.lock().unwrap();
+            let search = current_search_for_move.lock().unwrap();
+            refresh_ui_model(
+                &cards_model_for_move,
+                &store,
+                &order,
+                &filter,
+                &search,
+                &ui_weak_for_move,
+            );
             if let Some(ui) = ui_weak_for_move.upgrade() {
                 ui.set_selected_index(to_idx);
             }
-            log_msg(format!("Reordered item from position {} to {}", from_idx, to_idx));
+            log_msg(format!("Reordered item {} to position {}", f_id, to_idx));
         }
     });
 
@@ -284,8 +419,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             HWND(-1 as _), // HWND_TOPMOST
                             100,
                             100,
-                            340,
-                            560,
+                            360,
+                            580,
                             SWP_SHOWWINDOW,
                         );
                         let _ = SetForegroundWindow(hwnd);
