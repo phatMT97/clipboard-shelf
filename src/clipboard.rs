@@ -49,6 +49,7 @@ impl ClipboardListener {
 }
 
 fn run_listener_loop(tx: Sender<ClipboardItem>, running: Arc<AtomicBool>) {
+    crate::tray::attach_to_default_desktop();
     unsafe {
         let class_name = windows::core::w!("ClipboardShelfListenerClass");
         let wc = WNDCLASSW {
@@ -83,6 +84,7 @@ fn run_listener_loop(tx: Sender<ClipboardItem>, running: Arc<AtomicBool>) {
 
         let add_res = AddClipboardFormatListener(hwnd);
         println!("--> [Clipboard Thread] AddClipboardFormatListener returned: {:?}", add_res);
+        crate::tray::add_tray_icon(hwnd);
 
         let mut last_content: Option<String> = None;
 
@@ -140,6 +142,7 @@ fn run_listener_loop(tx: Sender<ClipboardItem>, running: Arc<AtomicBool>) {
             }
         }
 
+        crate::tray::remove_tray_icon(hwnd);
         let _ = RemoveClipboardFormatListener(hwnd);
         let _ = DestroyWindow(hwnd);
     }
@@ -151,6 +154,10 @@ unsafe extern "system" fn wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    if msg == crate::tray::WM_TRAYICON {
+        crate::tray::handle_tray_message(hwnd, lparam);
+        return LRESULT(0);
+    }
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
@@ -232,6 +239,9 @@ fn read_clipboard_item() -> Option<ClipboardItem> {
         // 4. Image data (CF_DIB / CF_BITMAP)
         if result.is_none() && (IsClipboardFormatAvailable(CF_DIB).is_ok() || IsClipboardFormatAvailable(CF_BITMAP).is_ok()) {
             let mut file_path = None;
+            let mut img_title = format!("Ảnh chụp {}", Local::now().format("%H:%M:%S"));
+            let mut img_preview = "Ảnh chụp màn hình / Clipboard".to_string();
+
             if let Ok(handle) = GetClipboardData(CF_DIB) {
                 let hglobal = windows::Win32::Foundation::HGLOBAL(handle.0);
                 let ptr = GlobalLock(hglobal);
@@ -241,11 +251,14 @@ fn read_clipboard_item() -> Option<ClipboardItem> {
                         let dib_bytes = std::slice::from_raw_parts(ptr as *const u8, size);
                         let temp_dir = std::env::temp_dir().join("clipboard-shelf");
                         let _ = std::fs::create_dir_all(&temp_dir);
-                        let file_name = format!("image_{}.bmp", Local::now().format("%Y%m%d_%H%M%S"));
-                        let full_path = temp_dir.join(file_name);
 
                         let bi_size = u32::from_le_bytes([dib_bytes[0], dib_bytes[1], dib_bytes[2], dib_bytes[3]]);
                         let bi_bit_count = u16::from_le_bytes([dib_bytes[14], dib_bytes[15]]);
+                        let bi_compression = if size >= 20 {
+                            u32::from_le_bytes([dib_bytes[16], dib_bytes[17], dib_bytes[18], dib_bytes[19]])
+                        } else {
+                            0
+                        };
                         let bi_clr_used = u32::from_le_bytes([dib_bytes[32], dib_bytes[33], dib_bytes[34], dib_bytes[35]]);
 
                         let palette_colors = if bi_clr_used > 0 {
@@ -255,7 +268,10 @@ fn read_clipboard_item() -> Option<ClipboardItem> {
                         } else {
                             0
                         };
-                        let offset_to_bits = 14 + bi_size as usize + (palette_colors * 4);
+                        let mut offset_to_bits = 14 + bi_size as usize + (palette_colors * 4);
+                        if bi_compression == 3 && bi_size == 40 {
+                            offset_to_bits += 12; // 3 DWORD color masks (BI_BITFIELDS)
+                        }
                         let file_size = 14 + size;
 
                         let mut bmp_data = Vec::with_capacity(file_size);
@@ -265,8 +281,22 @@ fn read_clipboard_item() -> Option<ClipboardItem> {
                         bmp_data.extend_from_slice(&(offset_to_bits as u32).to_le_bytes());
                         bmp_data.extend_from_slice(dib_bytes);
 
-                        if std::fs::write(&full_path, bmp_data).is_ok() {
-                            file_path = Some(full_path.to_string_lossy().to_string());
+                        let file_name = format!("image_{}_{}.png", Local::now().format("%Y%m%d_%H%M%S"), &uuid::Uuid::new_v4().to_string()[..8]);
+                        let full_path = temp_dir.join(file_name);
+
+                        // Decode BMP bytes in memory and encode directly to PNG for Slint and Windows!
+                        if let Ok(img) = image::load_from_memory_with_format(&bmp_data, image::ImageFormat::Bmp) {
+                            if img.save_with_format(&full_path, image::ImageFormat::Png).is_ok() {
+                                file_path = Some(full_path.to_string_lossy().to_string());
+                                img_title = format!("Ảnh chụp ({}×{})", img.width(), img.height());
+                                img_preview = format!("Ảnh chụp màn hình ({} × {} px)", img.width(), img.height());
+                            }
+                        } else {
+                            // Fallback if image crate fails to parse BMP: write raw BMP
+                            let bmp_path = temp_dir.join(format!("image_{}.bmp", Local::now().format("%Y%m%d_%H%M%S")));
+                            if std::fs::write(&bmp_path, &bmp_data).is_ok() {
+                                file_path = Some(bmp_path.to_string_lossy().to_string());
+                            }
                         }
                     }
                     let _ = GlobalUnlock(hglobal);
@@ -276,8 +306,8 @@ fn read_clipboard_item() -> Option<ClipboardItem> {
             let paths = if let Some(p) = file_path { vec![p] } else { Vec::new() };
             result = Some(ClipboardItem {
                 id: uuid::Uuid::new_v4().to_string(),
-                title: format!("Captured Image {}", Local::now().format("%H:%M:%S")),
-                preview: "Screenshot / Copied Image".to_string(),
+                title: img_title,
+                preview: img_preview,
                 item_type: ItemType::Image,
                 text_content: None,
                 file_paths: paths,

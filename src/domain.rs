@@ -41,17 +41,38 @@ impl ClipboardItem {
         let is_url = trimmed.starts_with("http://") || trimmed.starts_with("https://");
         let item_type = if is_url { ItemType::Url } else { ItemType::Text };
 
-        let first_line = trimmed.lines().next().unwrap_or("").to_string();
-        let title = if first_line.chars().count() > 40 {
-            format!("{}...", first_line.chars().take(40).collect::<String>())
-        } else if first_line.is_empty() {
-            "Empty text".to_string()
+        let line_count = trimmed.lines().count();
+        let char_count = trimmed.chars().count();
+
+        let title = if is_url {
+            let clean = trimmed.trim_start_matches("https://").trim_start_matches("http://");
+            if clean.chars().count() > 36 {
+                format!("{}...", clean.chars().take(36).collect::<String>())
+            } else {
+                clean.to_string()
+            }
+        } else if line_count > 1 {
+            let first_line = trimmed.lines().next().unwrap_or("").trim();
+            if first_line.chars().count() > 24 {
+                format!("{}... ({} dòng)", first_line.chars().take(24).collect::<String>(), line_count)
+            } else if first_line.is_empty() {
+                format!("Đoạn văn ({} dòng, {} ký tự)", line_count, char_count)
+            } else {
+                format!("{} ({} dòng)", first_line, line_count)
+            }
         } else {
-            first_line
+            let first_line = trimmed.lines().next().unwrap_or("").trim();
+            if first_line.chars().count() > 36 {
+                format!("{}...", first_line.chars().take(36).collect::<String>())
+            } else if first_line.is_empty() {
+                "Văn bản trống".to_string()
+            } else {
+                first_line.to_string()
+            }
         };
 
-        let preview = if trimmed.chars().count() > 100 {
-            format!("{}...", trimmed.chars().take(100).collect::<String>())
+        let preview = if trimmed.chars().count() > 10000 {
+            format!("{}...", trimmed.chars().take(10000).collect::<String>())
         } else {
             trimmed.to_string()
         };
@@ -71,6 +92,12 @@ impl ClipboardItem {
 
     pub fn new_files(paths: Vec<String>) -> Self {
         let count = paths.len();
+        let is_single_image = count == 1 && {
+            let p = paths[0].to_lowercase();
+            p.ends_with(".png") || p.ends_with(".jpg") || p.ends_with(".jpeg") || p.ends_with(".bmp") || p.ends_with(".webp")
+        };
+        let item_type = if is_single_image { ItemType::Image } else { ItemType::Files };
+
         let title = if count == 1 {
             std::path::Path::new(&paths[0])
                 .file_name()
@@ -86,7 +113,7 @@ impl ClipboardItem {
             id: uuid::Uuid::new_v4().to_string(),
             title,
             preview,
-            item_type: ItemType::Files,
+            item_type,
             text_content: None,
             file_paths: paths,
             image_data: None,

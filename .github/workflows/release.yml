@@ -1,0 +1,60 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC developer tools
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build Release Binary
+        run: cargo build --release
+
+      - name: Prepare Release Package
+        shell: pwsh
+        run: |
+          $Version = if ($env:GITHUB_REF -like "refs/tags/*") {
+            $env:GITHUB_REF_NAME
+          } else {
+            "v0.0.1"
+          }
+          $DistDir = "clipboard-shelf-$Version-windows-x64"
+          New-Item -ItemType Directory -Path $DistDir
+          Copy-Item .\target\release\clipboard-shelf.exe $DistDir\
+          Copy-Item .\README.md $DistDir\
+          Copy-Item .\assets\app_icon.ico $DistDir\
+          Copy-Item .\assets\app_icon.png $DistDir\
+          Compress-Archive -Path $DistDir -DestinationPath "$DistDir.zip"
+          Write-Output "ZIP_NAME=$DistDir.zip" >> $env:GITHUB_ENV
+          Write-Output "RELEASE_TAG=$Version" >> $env:GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "Clipboard Shelf ${{ env.RELEASE_TAG }}"
+          files: |
+            clipboard-shelf-*-windows-x64.zip
+            target/release/clipboard-shelf.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: true

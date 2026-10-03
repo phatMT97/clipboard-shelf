@@ -150,41 +150,48 @@ impl ShelfDataObject {
     }
 
     fn create_hdrop(&self) -> Option<HGLOBAL> {
-        if self.files.is_empty() {
+        create_hdrop_from_paths(&self.files)
+    }
+}
+
+pub fn create_hdrop_from_paths(files: &[String]) -> Option<HGLOBAL> {
+    if files.is_empty() {
+        return None;
+    }
+
+    let mut buffer: Vec<u16> = Vec::new();
+    for file in files {
+        buffer.extend(file.encode_utf16());
+        buffer.push(0);
+    }
+    buffer.push(0); // double null terminator
+
+    let header_size = size_of::<DROPFILES>();
+    let data_size = buffer.len() * size_of::<u16>();
+    let total_size = header_size + data_size;
+
+    unsafe {
+        let hglobal = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, total_size).ok()?;
+        let ptr = GlobalLock(hglobal);
+        if ptr.is_null() {
             return None;
         }
 
-        let mut buffer: Vec<u16> = Vec::new();
-        for file in &self.files {
-            buffer.extend(file.encode_utf16());
-            buffer.push(0);
-        }
-        buffer.push(0); // double null terminator
+        let dropfiles = ptr as *mut DROPFILES;
+        (*dropfiles).pFiles = header_size as u32;
+        (*dropfiles).pt = POINT { x: 0, y: 0 };
+        (*dropfiles).fNC = BOOL(0);
+        (*dropfiles).fWide = BOOL(1); // Unicode
 
-        let header_size = size_of::<DROPFILES>();
-        let data_size = buffer.len() * size_of::<u16>();
-        let total_size = header_size + data_size;
+        let data_ptr = (ptr as *mut u8).add(header_size) as *mut u16;
+        copy_nonoverlapping(buffer.as_ptr(), data_ptr, buffer.len());
 
-        unsafe {
-            let hglobal = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, total_size).ok()?;
-            let ptr = GlobalLock(hglobal);
-            if ptr.is_null() {
-                return None;
-            }
-
-            let dropfiles = ptr as *mut DROPFILES;
-            (*dropfiles).pFiles = header_size as u32;
-            (*dropfiles).pt = POINT { x: 0, y: 0 };
-            (*dropfiles).fNC = BOOL(0);
-            (*dropfiles).fWide = BOOL(1); // Unicode
-
-            let data_ptr = (ptr as *mut u8).add(header_size) as *mut u16;
-            copy_nonoverlapping(buffer.as_ptr(), data_ptr, buffer.len());
-
-            let _ = GlobalUnlock(hglobal);
-            Some(hglobal)
-        }
+        let _ = GlobalUnlock(hglobal);
+        Some(hglobal)
     }
+}
+
+impl ShelfDataObject_Impl {
 
     fn create_unicode_text(&self) -> Option<HGLOBAL> {
         let text = self.text.as_ref()?;
