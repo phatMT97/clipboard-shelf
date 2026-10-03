@@ -86,8 +86,10 @@ export component MainWindow inherits Window {
         // Shelf item list
         ScrollView {
             vertical-stretch: 1;
+            viewport-height: (root.item_count == 0) ? 140px : (root.item_count * 82px + 10px);
 
             VerticalLayout {
+                height: (root.item_count == 0) ? 140px : (root.item_count * 82px + 10px);
                 spacing: 8px;
                 padding-right: 4px;
 
@@ -141,6 +143,7 @@ export component MainWindow inherits Window {
 
                     // Card body touch area (handles selection, re-copy, and deliberate OLE drag to external apps)
                     card-touch := TouchArea {
+                        scroll-event(event) => { reject }
                         clicked => {
                             if (!root.is_reordering) {
                                 root.selected_index = i;
@@ -174,6 +177,7 @@ export component MainWindow inherits Window {
 
                             grip-touch := TouchArea {
                                 mouse-cursor: row-resize;
+                                scroll-event(event) => { reject }
                                 pointer-event(event) => {
                                     if (event.kind == PointerEventKind.down) {
                                         root.reorder_from = i;
