@@ -243,6 +243,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(item) = items_store_for_copy.lock().unwrap().get(&target_id) {
             log_msg(format!("Card clicked! Re-copying to clipboard: [row {}] target_id={}, title={}", idx, target_id, item.title));
             if let Some(text) = &item.text_content {
+                crate::clipboard::set_internal_copy();
                 unsafe {
                     use windows::Win32::System::DataExchange::{OpenClipboard, CloseClipboard, EmptyClipboard, SetClipboardData};
                     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};

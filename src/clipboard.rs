@@ -19,6 +19,12 @@ const CF_DIB: u32 = 8;
 const CF_UNICODETEXT: u32 = 13;
 const CF_HDROP_ID: u32 = 15;
 
+static IS_INTERNAL_COPY: AtomicBool = AtomicBool::new(false);
+
+pub fn set_internal_copy() {
+    IS_INTERNAL_COPY.store(true, Ordering::SeqCst);
+}
+
 #[allow(dead_code)]
 pub struct ClipboardListener {
     running: Arc<AtomicBool>,
@@ -98,7 +104,16 @@ fn run_listener_loop(tx: Sender<ClipboardItem>, running: Arc<AtomicBool>) {
             if has_msg.as_bool() {
                 if msg.message == WM_CLIPBOARDUPDATE {
                     println!("--> [Clipboard Thread] WM_CLIPBOARDUPDATE received!");
-                    if let Some(item) = read_clipboard_item() {
+                    if IS_INTERNAL_COPY.swap(false, Ordering::SeqCst) {
+                        println!("--> [Clipboard Thread] Ignored WM_CLIPBOARDUPDATE from internal Shelf copy");
+                        if let Some(item) = read_clipboard_item() {
+                            if let Some(t) = &item.text_content {
+                                last_content = Some(t.clone());
+                            } else if let Some(f) = item.file_paths.first() {
+                                last_content = Some(f.clone());
+                            }
+                        }
+                    } else if let Some(item) = read_clipboard_item() {
                         let is_duplicate = match (&last_content, &item.text_content, item.file_paths.first()) {
                             (Some(last), Some(current), _) => last == current,
                             (Some(last), None, Some(first_file)) => last == first_file,
